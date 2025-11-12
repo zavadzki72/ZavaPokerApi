@@ -18,12 +18,17 @@ namespace ZavaPoker.Api.Services
             _logger = logger;
         }
 
-        public async Task<List<VotePackage>> GetVotePackages()
+        public List<VotePackage> GetVotePackages()
         {
             return _votePackages;
         }
 
-        public async Task<Room?> CreateRoom(string roomName, Guid votePackageId, string userName)
+        public List<User> GetUsersByRoom(Guid roomId)
+        {
+            return _rooms.FirstOrDefault(r => r.Id == roomId)?.Users ?? [];
+        }
+
+        public Room? CreateRoom(string roomName, Guid votePackageId, string userName)
         {
             _logger.LogInformation("Creating room {RoomName} with vote package {VotePackageId} for user {UserName}", roomName, votePackageId, userName);
 
@@ -44,7 +49,7 @@ namespace ZavaPoker.Api.Services
             return room;
         }
 
-        public async Task JoinRoom(Guid roomId, string userName)
+        public void JoinRoom(Guid roomId, string userName)
         {
             _logger.LogInformation("User {UserName} is joining room {RoomId}", userName, roomId);
 
@@ -66,7 +71,7 @@ namespace ZavaPoker.Api.Services
             _logger.LogInformation("User {UserName} joined room {RoomName} successfully", userName, room.Name);
         }
 
-        public async Task LeaveRoom(string userName)
+        public Room? LeaveRoom(string userName)
         {
             _logger.LogInformation("User {UserName} is leaving their current room", userName);
 
@@ -74,7 +79,7 @@ namespace ZavaPoker.Api.Services
             if (!user.IsInRoom())
             {
                 _logger.LogWarning("User {UserName} is not in any room and cannot leave", userName);
-                return;
+                return null;
             }
 
             user.CurrentRoom!.RemoveUser(user);
@@ -87,9 +92,11 @@ namespace ZavaPoker.Api.Services
             }
 
             _logger.LogInformation("User {UserName} left room {RoomName} successfully", userName, user.CurrentRoom!.Name);
+
+            return user.CurrentRoom;
         }
 
-        public async Task<Round?> StartRound(Guid roomId)
+        public Round? StartRound(Guid roomId)
         {
             var room = _rooms.FirstOrDefault(x => x.Id == roomId);
             if (room == null)
@@ -105,7 +112,7 @@ namespace ZavaPoker.Api.Services
             return room.GetCurrentRound();
         }
 
-        public async Task<Vote?> SubmitVote(string userName, string voteValue)
+        public Vote? SubmitVote(string userName, string voteValue)
         {
             _logger.LogInformation("User {UserName} is submitting vote {VoteValue}", userName, voteValue);
 
@@ -131,7 +138,7 @@ namespace ZavaPoker.Api.Services
             return vote;
         }
 
-        public async Task RevealCards(Guid roomId)
+        public void RevealCards(Guid roomId)
         {
             var room = _rooms.FirstOrDefault(x => x.Id == roomId);
             if (room == null)
@@ -145,7 +152,7 @@ namespace ZavaPoker.Api.Services
             _logger.LogInformation("Cards revealed in room {RoomName}", room.Name);
         }
 
-        public async Task DestroyRoom(Guid roomId)
+        public void DestroyRoom(Guid roomId)
         {
             var room = _rooms.FirstOrDefault(x => x.Id == roomId);
             if (room == null)
@@ -158,6 +165,68 @@ namespace ZavaPoker.Api.Services
             _rooms.Remove(room);
 
             _logger.LogInformation("Room {RoomName} destroyed successfully", room.Name);
+        }
+
+        public void ToggleOwner(Guid roomId, string newOwnerUserName)
+        {
+            var room = _rooms.FirstOrDefault(x => x.Id == roomId);
+            if (room == null)
+            {
+                _logger.LogWarning("Room {RoomId} not found", roomId);
+                return;
+            }
+
+            var user = room.Users.FirstOrDefault(u => u.Name.Equals(newOwnerUserName, StringComparison.InvariantCultureIgnoreCase));
+
+            if(user == null)
+            {
+                _logger.LogWarning("User {UserName} not found in room {RoomName}", newOwnerUserName, room.Name);
+                return;
+            }
+
+            room.ToggleOwner(user);
+        }
+
+        public void ChangeRole(Guid roomId, string userName)
+        {
+            var room = _rooms.FirstOrDefault(x => x.Id == roomId);
+            if (room == null)
+            {
+                _logger.LogWarning("Room {RoomId} not found", roomId);
+                return;
+            }
+
+            var user = room.Users.FirstOrDefault(u => u.Name.Equals(userName, StringComparison.InvariantCultureIgnoreCase));
+
+            if (user == null)
+            {
+                _logger.LogWarning("User {UserName} not found in room {RoomName}", userName, room.Name);
+                return;
+            }
+
+            user.ChangeRole();
+        }
+
+        public VotePackage? ChangeVotePackage(Guid roomId, Guid votePackageId)
+        {
+            var room = _rooms.FirstOrDefault(x => x.Id == roomId);
+            if (room == null)
+            {
+                _logger.LogWarning("Room {RoomId} not found", roomId);
+                return null;
+            }
+
+            var votePackage = _votePackages.FirstOrDefault(vp => vp.Id == votePackageId);
+
+            if(votePackage == null)
+            {
+                _logger.LogWarning("Vote package {VotePackageId} not found", votePackageId);
+                return null;
+            }
+
+            room.UpdateVotePackage(votePackage);
+
+            return votePackage;
         }
 
         private User GetOrCreateUser(string userName)
@@ -178,7 +247,9 @@ namespace ZavaPoker.Api.Services
         private static List<VotePackage> PopulateVotePackages()
         {
             return [
-                new VotePackage(Guid.CreateVersion7(), "Fibonacci", ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144"])
+                new VotePackage(Guid.CreateVersion7(), "Fibonacci", ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"]),
+                new VotePackage(Guid.CreateVersion7(), "Sequencial", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]),
+                new VotePackage(Guid.CreateVersion7(), "Tshirt", ["XS", "S", "M", "L", "XL", "XXL", "?"])
             ];
         }
     }

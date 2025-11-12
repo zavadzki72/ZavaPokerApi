@@ -20,5 +20,10 @@
         {
             return CurrentRoom != null;
         }
+
+        public void ChangeRole()
+        {
+            IsSpec = !IsSpec;
+        }
     }
 }

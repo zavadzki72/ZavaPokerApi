@@ -59,6 +59,16 @@
             return Rounds.FirstOrDefault(r => r.IsActive);
         }
 
+        public void ToggleOwner(User newOwner)
+        {
+            Owner = newOwner;
+        }
+
+        public void UpdateVotePackage(VotePackage newVotePackage)
+        {
+            VotePackage = newVotePackage;
+        }
+
         public void Destroy()
         {
             Users.Clear();
