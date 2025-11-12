@@ -1,9 +1,12 @@
 using ZavaPoker.Api.Hubs;
+using ZavaPoker.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.AddSingleton<PokerService>();
 
 builder.Services.AddSignalR();
 
