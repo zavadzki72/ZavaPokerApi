@@ -1,16 +1,11 @@
-using ZavaPoker.WebApi.Hubs;
-using ZavaPoker.WebApi.Services;
+using ZavaPoker.Api.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
 builder.Services.AddSignalR();
-
-builder.Services.AddSingleton<RoomService>();
-builder.Services.AddSingleton<AdoService>();
 
 builder.Services.AddCors(options =>
 {
@@ -25,17 +20,11 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapHub<PokerHub>("/pokerHub");
+app.MapHub<PokerHub>("/zava-hub");
 
 app.Run();
