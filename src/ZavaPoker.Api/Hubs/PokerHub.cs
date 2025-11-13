@@ -39,19 +39,6 @@ namespace ZavaPoker.Api.Hubs
                 return;
 
             await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
-            await SendEventSignal("VotePackageChanged", new { roomId, votePackage = room.VotePackage }, "caller");
-
-            var currentRound = room.GetCurrentRound();
-
-            if(currentRound != null && currentRound.IsVisible)
-            {
-                await SendEventSignal("CardsRevealed", roomId, "caller");
-            }
-            else
-            {
-                await SendEventSignal("RoundStarted", roomId, "caller");
-            }
-
             await UpdateUserList(roomId);
         }
 
@@ -70,7 +57,7 @@ namespace ZavaPoker.Api.Hubs
             if (round == null)
                 return;
 
-            await SendEventSignal("RoundStarted", new { roomId, round }, "group", round.Room.Id);
+            await UpdateUserList(roomId);
         }
 
         public async Task SubmitVote(string userName, string voteValue)
@@ -81,12 +68,13 @@ namespace ZavaPoker.Api.Hubs
                 return;
 
             await SendEventSignal("VoteSubmitted", new { userName, voteValue, vote }, "group", vote.Round.Room.Id);
+            await UpdateUserList(vote.Round.Room.Id);
         }
 
         public async Task RevealCards(Guid roomId)
         {
             _pokerService.RevealCards(roomId);
-            await SendEventSignal("CardsRevealed", roomId, "group", roomId);
+            await UpdateUserList(roomId);
         }
 
         public async Task DestroyRoom(Guid roomId)
@@ -116,7 +104,7 @@ namespace ZavaPoker.Api.Hubs
             if (votePackage == null)
                 return;
 
-            await SendEventSignal("VotePackageChanged", new { roomId, votePackage }, "group", roomId);
+            await UpdateUserList(roomId);
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
@@ -148,11 +136,11 @@ namespace ZavaPoker.Api.Hubs
             var users = _pokerService.GetUsersByRoom(roomId);
             var room = _pokerService.GetRoomById(roomId);
 
-            if (room == null) return;
+            if (room == null) 
+                return;
 
             var currentRound = room.GetCurrentRound();
-
-            var dto = users.Select(x =>
+            var userDtoList = users.Select(x =>
             {
                 var vote = currentRound?.Votes.FirstOrDefault(v => v.Voter.Id == x.Id);
 
@@ -166,8 +154,17 @@ namespace ZavaPoker.Api.Hubs
                 );
             }).ToList();
 
-            var eventJson = JsonSerializer.Serialize(new { roomId, dto });
-            _logger.LogInformation("Updating user list: {EventValue}", eventJson);
+            var roomStatePayload = new
+            {
+                roomId,
+                roomName = room.Name,
+                votePackage = room.VotePackage,
+                areCardsRevealed = currentRound?.IsVisible ?? false,
+                users = userDtoList
+            };
+
+            var eventJson = JsonSerializer.Serialize(roomStatePayload);
+            _logger.LogInformation("Updating user list (full state): {EventValue}", eventJson);
 
             await Clients.Group(roomId.ToString()).SendAsync("UpdateUserList", eventJson);
         }
