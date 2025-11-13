@@ -9,8 +9,6 @@
             Name = name;
             VotePackage = votePackage;
             Owner = owner;
-
-            Users.Add(owner);
         }
 
         public Guid Id { get; init; }

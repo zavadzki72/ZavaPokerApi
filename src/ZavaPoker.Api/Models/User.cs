@@ -16,6 +16,11 @@
 
         public Room? CurrentRoom { get; private set; }
 
+        public void SetCurrentRoom(Room? room)
+        {
+            CurrentRoom = room;
+        }
+
         public bool IsInRoom()
         {
             return CurrentRoom != null;

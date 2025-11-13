@@ -10,9 +10,9 @@ namespace ZavaPoker.Api.Services
         private readonly List<User> _users = [];
         private readonly List<Room> _rooms = [];
 
-        private readonly Logger<PokerHub> _logger;
+        private readonly ILogger<PokerService> _logger;
 
-        public PokerService(Logger<PokerHub> logger)
+        public PokerService(ILogger<PokerService> logger)
         {
             _votePackages = PopulateVotePackages();
             _logger = logger;
@@ -26,6 +26,11 @@ namespace ZavaPoker.Api.Services
         public List<User> GetUsersByRoom(Guid roomId)
         {
             return _rooms.FirstOrDefault(r => r.Id == roomId)?.Users ?? [];
+        }
+
+        public Room GetRoomById(Guid roomId)
+        {
+            return _rooms.FirstOrDefault(r => r.Id == roomId)!;
         }
 
         public Room? CreateRoom(string roomName, Guid votePackageId, string userName)
@@ -49,7 +54,7 @@ namespace ZavaPoker.Api.Services
             return room;
         }
 
-        public void JoinRoom(Guid roomId, string userName)
+        public Room? JoinRoom(Guid roomId, string userName)
         {
             _logger.LogInformation("User {UserName} is joining room {RoomId}", userName, roomId);
 
@@ -57,21 +62,25 @@ namespace ZavaPoker.Api.Services
             if (room == null)
             {
                 _logger.LogWarning("Room {RoomId} not found", roomId);
-                return;
+                return null;
             }
 
             var user = GetOrCreateUser(userName);
             if (user.IsInRoom())
             {
                 _logger.LogWarning("User {UserName} is already in a room and cannot join another", userName);
-                return;
+                return null;
             }
 
             room.AddUser(user);
+            user.SetCurrentRoom(room);
+
             _logger.LogInformation("User {UserName} joined room {RoomName} successfully", userName, room.Name);
+
+            return room;
         }
 
-        public Room? LeaveRoom(string userName)
+        public Guid LeaveRoom(string userName)
         {
             _logger.LogInformation("User {UserName} is leaving their current room", userName);
 
@@ -79,9 +88,10 @@ namespace ZavaPoker.Api.Services
             if (!user.IsInRoom())
             {
                 _logger.LogWarning("User {UserName} is not in any room and cannot leave", userName);
-                return null;
+                return Guid.Empty;
             }
 
+            var roomId = user.CurrentRoom!.Id;
             user.CurrentRoom!.RemoveUser(user);
             _logger.LogInformation("User {UserName} removed from room {RoomName}", userName, user.CurrentRoom.Name);
 
@@ -93,7 +103,9 @@ namespace ZavaPoker.Api.Services
 
             _logger.LogInformation("User {UserName} left room {RoomName} successfully", userName, user.CurrentRoom!.Name);
 
-            return user.CurrentRoom;
+            user.SetCurrentRoom(null);
+
+            return roomId;
         }
 
         public Round? StartRound(Guid roomId)
@@ -132,6 +144,7 @@ namespace ZavaPoker.Api.Services
             }
 
             var vote = new Vote(user, round, voteValue);
+            round.AddVote(vote);
 
             _logger.LogInformation("User {UserName} submitted vote {VoteValue} successfully in room {RoomName}", userName, voteValue, room.Name);
 

@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using ZavaPoker.Api.Models;
 using ZavaPoker.Api.Services;
 
@@ -9,40 +8,59 @@ namespace ZavaPoker.Api.Hubs
     public class PokerHub : Hub
     {
         private readonly PokerService _pokerService;
-        private readonly Logger<PokerHub> _logger;
+        private readonly ILogger<PokerHub> _logger;
 
-        public PokerHub(PokerService pokerService, Logger<PokerHub> logger)
+        public PokerHub(PokerService pokerService, ILogger<PokerHub> logger)
         {
             _logger = logger;
             _pokerService = pokerService;
         }
 
-        public async Task CreateRoom(string roomName, Guid votePackageId, string userName)
+        public List<VotePackage> GetVotePackages()
         {
-            var room = _pokerService.CreateRoom(roomName, votePackageId, userName);
+            return _pokerService.GetVotePackages();
+        }
 
-            if (room == null)
-                return;
+        public async Task<Guid> CreateRoom(string roomName, Guid votePackageId, string userName)
+        {
+            var room = _pokerService.CreateRoom(roomName, votePackageId, userName) 
+                ?? throw new HubException($"Não foi possível criar a sala. O usuário '{userName}' já pode estar em outra sala.");
 
-            await UpdateUserList(room.Id, _pokerService.GetUsersByRoom(room.Id));
+            await Groups.AddToGroupAsync(Context.ConnectionId, room.Id.ToString());
+            await UpdateUserList(room.Id);
+
+            return room.Id;
         }
 
         public async Task JoinRoom(Guid roomId, string userName)
         {
-            _pokerService.JoinRoom(roomId, userName);
+            var room = _pokerService.JoinRoom(roomId, userName);
+            if (room == null)
+                return;
+
             await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
-            await UpdateUserList(roomId, _pokerService.GetUsersByRoom(roomId));
+            await SendEventSignal("VotePackageChanged", new { roomId, votePackage = room.VotePackage }, "caller");
+
+            var currentRound = room.GetCurrentRound();
+
+            if(currentRound != null && currentRound.IsVisible)
+            {
+                await SendEventSignal("CardsRevealed", roomId, "caller");
+            }
+            else
+            {
+                await SendEventSignal("RoundStarted", roomId, "caller");
+            }
+
+            await UpdateUserList(roomId);
         }
 
         public async Task LeaveRoom(string userName)
         {
-            var room = _pokerService.LeaveRoom(userName);
+            var roomId = _pokerService.LeaveRoom(userName);
 
-            if (room == null)
-                return;
-
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, room.Id.ToString());
-            await UpdateUserList(room.Id, _pokerService.GetUsersByRoom(room.Id));
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId.ToString());
+            await UpdateUserList(roomId);
         }
 
         public async Task StartRound(Guid roomId)
@@ -81,14 +99,14 @@ namespace ZavaPoker.Api.Hubs
         {
             _pokerService.ToggleOwner(roomId, newOwnerUserName);
             await SendEventSignal("OwnerToggled", new { roomId, newOwnerUserName }, "group", roomId);
-            await UpdateUserList(roomId, _pokerService.GetUsersByRoom(roomId));
+            await UpdateUserList(roomId);
         }
 
         public async Task ChangeRole(Guid roomId, string userName)
         {
             _pokerService.ChangeRole(roomId, userName);
             await SendEventSignal("RoleChanged", new { roomId, userName }, "group", roomId);
-            await UpdateUserList(roomId, _pokerService.GetUsersByRoom(roomId));
+            await UpdateUserList(roomId);
         }
 
         public async Task ChangeVotePackage(Guid roomId, Guid votePackageId)
@@ -99,6 +117,11 @@ namespace ZavaPoker.Api.Hubs
                 return;
 
             await SendEventSignal("VotePackageChanged", new { roomId, votePackage }, "group", roomId);
+        }
+
+        public override async Task OnDisconnectedAsync(Exception? exception)
+        {
+            await base.OnDisconnectedAsync(exception);
         }
 
         private async Task SendEventSignal(string eventName, object eventValue, string destination, Guid? groupId = null)
@@ -120,12 +143,53 @@ namespace ZavaPoker.Api.Hubs
             }
         }
 
-        private async Task UpdateUserList(Guid roomId, List<User> users)
+        private async Task UpdateUserList(Guid roomId)
         {
-            var eventJson = JsonSerializer.Serialize(new {roomId, users});
+            var users = _pokerService.GetUsersByRoom(roomId);
+            var room = _pokerService.GetRoomById(roomId);
+
+            if (room == null) return;
+
+            var currentRound = room.GetCurrentRound();
+
+            var dto = users.Select(x =>
+            {
+                var vote = currentRound?.Votes.FirstOrDefault(v => v.Voter.Id == x.Id);
+
+                return new UserDto(
+                    x.Id,
+                    x.Name,
+                    room.Owner.Id == x.Id,
+                    x.IsSpec ? "Spectator" : "Player",
+                    vote != null,
+                    currentRound?.IsVisible == true ? vote?.Value : null
+                );
+            }).ToList();
+
+            var eventJson = JsonSerializer.Serialize(new { roomId, dto });
             _logger.LogInformation("Updating user list: {EventValue}", eventJson);
 
             await Clients.Group(roomId.ToString()).SendAsync("UpdateUserList", eventJson);
         }
+    }
+
+    public class UserDto
+    {
+        public UserDto(Guid userId, string name, bool isOwner, string role, bool hasVoted, string? vote)
+        {
+            UserId = userId;
+            Name = name;
+            IsOwner = isOwner;
+            Role = role;
+            HasVoted = hasVoted;
+            Vote = vote;
+        }
+
+        public Guid UserId { get; init; }
+        public string Name { get; init; }
+        public bool IsOwner { get; init; }
+        public string Role { get; init; }
+        public bool HasVoted { get; init; } 
+        public string? Vote { get; init; }
     }
 }

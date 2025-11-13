@@ -16,6 +16,8 @@
         public bool IsActive { get; private set; }
         public Room Room { get; init; }
 
+        public List<Vote> Votes { get; private set; } = [];
+
         public void RevealCards()
         {
             IsVisible = true;
@@ -24,6 +26,11 @@
         public void EndRound()
         {
             IsActive = false;
+        }
+
+        public void AddVote(Vote vote)
+        {
+            Votes.Add(vote);
         }
     }
 }
