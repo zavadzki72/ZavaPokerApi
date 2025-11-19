@@ -49,6 +49,9 @@ namespace ZavaPoker.Api.Services
             var room = new Room(roomName, votePackage, user);
             _rooms.Add(room);
 
+            room.AddUser(user);
+            user.SetCurrentRoom(room);
+
             _logger.LogInformation("Room {RoomName} created successfully", roomName);
 
             return room;

@@ -21,6 +21,39 @@ namespace ZavaPoker.Api.Hubs
             return _pokerService.GetVotePackages();
         }
 
+        public object? GetUsersInRoom(Guid roomId)
+        {
+            var users = _pokerService.GetUsersByRoom(roomId);
+            var room = _pokerService.GetRoomById(roomId);
+
+            if (room == null)
+                return null;
+
+            var currentRound = room.GetCurrentRound();
+            var userDtoList = users.Select(x =>
+            {
+                var vote = currentRound?.Votes.FirstOrDefault(v => v.Voter.Id == x.Id);
+
+                return new UserDto(
+                    x.Id,
+                    x.Name,
+                    room.Owner.Id == x.Id,
+                    x.IsSpec ? "Spectator" : "Player",
+                    vote != null,
+                    currentRound?.IsVisible == true ? vote?.Value : null
+                );
+            }).ToList();
+
+            return new
+            {
+                roomId,
+                roomName = room.Name,
+                votePackage = room.VotePackage,
+                areCardsRevealed = currentRound?.IsVisible ?? false,
+                users = userDtoList
+            };
+        }
+
         public async Task<Guid> CreateRoom(string roomName, Guid votePackageId, string userName)
         {
             var room = _pokerService.CreateRoom(roomName, votePackageId, userName) 
